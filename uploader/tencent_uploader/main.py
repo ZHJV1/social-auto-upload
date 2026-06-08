@@ -116,8 +116,8 @@ async def cookie_auth(account_file):
             await page.wait_for_load_state("load")
 
             login_markers = [
-                page.get_by_text("扫码登录", exact=True).first,
-                page.get_by_text("发表视频", exact=True).first,
+                page.get_by_text("扫码登录").first,
+                page.get_by_text("发表视频").first,
                 page.get_by_role("button", name="发表").first,
             ]
 
@@ -496,16 +496,13 @@ class TencentBaseUploader(BaseVideoUploader):
         await page.locator("div.input-editor").click()
 
     async def open_upload_page(self, page: Page) -> None:
-        # 微信视频号已废弃直接跳转 /post/create，现在统一先进平台首页再点「发表视频」
         await page.goto(TENCENT_PLATFORM_URL, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_load_state("load")
-        # 点「发表视频」按钮打开上传弹窗
-        publish_btn = page.get_by_text("发表视频", exact=True).first
-        if not await publish_btn.count():
-            publish_btn = page.locator('button:has-text("发表视频")').first
+        await page.wait_for_timeout(5000)
+        # 「发表视频」不是标准 button，用 get_by_text（不用 exact，页面文本可能含空格）
+        publish_btn = page.get_by_text("发表视频").first
         await publish_btn.wait_for(state="visible", timeout=30000)
         await publish_btn.click()
-        # 等上传弹窗/页面出现
         await page.wait_for_timeout(2000)
 
     async def upload_video_file(self, page: Page, file_path: str) -> None:
