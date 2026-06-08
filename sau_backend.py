@@ -11,7 +11,8 @@ from myUtils.auth import check_cookie
 from flask import Flask, request, jsonify, Response, render_template, send_from_directory
 from werkzeug.utils import secure_filename
 from conf import BASE_DIR
-from myUtils.login import get_tencent_cookie, douyin_cookie_gen, get_ks_cookie, xiaohongshu_cookie_gen
+from myUtils.login import douyin_cookie_gen, get_ks_cookie, xiaohongshu_cookie_gen
+from uploader.tencent_uploader.main import tencent_cookie_gen as _tencent_gen
 from myUtils.postVideo import post_video_tencent, post_video_DouYin, post_video_ks, post_video_xhs
 
 active_queues = {}
@@ -685,6 +686,15 @@ def download_cookie():
         }), 500
 
 
+async def _tencent_cookie_adapter(account_name: str, status_queue: Queue):
+    from pathlib import Path
+    from conf import BASE_DIR
+    account_file = str(Path(BASE_DIR) / "cookies" / f"tencent_{account_name}.json")
+    Path(account_file).parent.mkdir(parents=True, exist_ok=True)
+    result = await _tencent_gen(account_file, headless=True)
+    status_queue.put(str(result))
+
+
 # 包装函数：在线程中运行异步函数
 def run_async_function(type,id,status_queue):
     match type:
@@ -696,7 +706,7 @@ def run_async_function(type,id,status_queue):
         case '2':
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(get_tencent_cookie(id,status_queue))
+            loop.run_until_complete(_tencent_cookie_adapter(id, status_queue))
             loop.close()
         case '3':
             loop = asyncio.new_event_loop()
