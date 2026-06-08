@@ -353,34 +353,81 @@ class KSBaseUploader(BaseVideoUploader):
     async def set_author_declaration(self, page: Page) -> None:
         """快手「作者声明」→ 选择「内容为AI生成」"""
         try:
-            # 「作者声明」入口
+            # 1. 展开「作者声明」区域
             entry = page.locator(
                 'div:has-text("作者声明"), span:has-text("作者声明")'
             ).first
             if await entry.count() and await entry.is_visible():
                 await entry.click()
-                kuaishou_logger.info(_msg("🧾", "已打开作者声明面板"))
+                kuaishou_logger.info(_msg("🧾", "已展开作者声明区域"))
             else:
                 kuaishou_logger.info(_msg("🧾", "未发现作者声明入口，跳过"))
                 return
 
             await asyncio.sleep(1)
 
-            # 选「内容为AI生成」
-            ai_option = page.locator(
-                ':has-text("内容为AI生成"), :has-text("AI生成")'
-            ).first
-            if await ai_option.count():
-                await ai_option.click()
-                kuaishou_logger.success(_msg("🤖", "作者声明已选「内容为AI生成」"))
+            # 2. 打开声明类型下拉菜单 —— 点在 select 组件本身而非文本标签
+            await asyncio.sleep(0.5)
+            # 作者声明区域内的 input/select 组件
+            select_trigger = page.locator(
+                '.el-select, .ant-select, input[readonly], '
+                'div[class*=\"select\"], div[class*=\"dropdown\"]'
+            ).filter(has_text="补充").first
+            if await select_trigger.count():
+                await select_trigger.click()
+                kuaishou_logger.info(_msg("🧾", "已打开声明类型下拉"))
+            else:
+                # 回退：直接点文本标签
+                fallback = page.locator(':has-text("为作品添加补充说明"), :has-text("请选择声明类型")').first
+                if await fallback.count():
+                    await fallback.click()
+                    kuaishou_logger.info(_msg("🧾", "已打开声明类型下拉（fallback）"))
 
-            # 确认
+            await asyncio.sleep(1)
+
+            # 3. 在下拉 popup 中选 AI 选项（Element UI / Ant Design 的选项在 body 末尾的独立层）
+            popup = page.locator(
+                '.el-select-dropdown:visible, .el-popper:visible, '
+                '.ant-select-dropdown:visible, [class*=\"dropdown\"]:visible, '
+                '[class*=\"select-dropdown\"]:visible'
+            ).last
+            if not await popup.count():
+                popup = page.locator('body')  # fallback
+
+            popup_text = await popup.inner_text()
+            ai_keys = ['内容由AI生成', '内容为AI生成', 'AI生成内容',
+                       '人工智能生成', '含有AI生成内容', 'AI生成',
+                       '含AI生成', 'AI技术生成']
+            # 用键盘选下拉选项：Arrow Down → Enter（Element UI 标准交互）
+            await page.keyboard.press("ArrowDown")
+            await asyncio.sleep(0.3)
+            await page.keyboard.press("ArrowDown")  # 跳过默认聚焦
+            await asyncio.sleep(0.3)
+            # 输入搜索 "AI" 快速定位
+            await page.keyboard.type("AI")
+            await asyncio.sleep(1)
+            await page.keyboard.press("Enter")
+            kuaishou_logger.success(_msg("🤖", "作者声明已选"))
+
+            await asyncio.sleep(1)
+
+            # 确认（等按钮变为 enabled）
+            await asyncio.sleep(1)
             confirm = page.locator(
-                'button:has-text("确定"), button:has-text("确认")'
+                'button:has-text("确定"):not([disabled]), button:has-text("确认"):not([disabled])'
             ).first
-            if await confirm.count():
+            try:
+                await confirm.wait_for(state="visible", timeout=8000)
                 await confirm.click()
                 kuaishou_logger.info(_msg("🧾", "作者声明已确认"))
+            except Exception:
+                # 回退：所有确认按钮 force click
+                for btn_text in ["确定", "确认", "保存"]:
+                    btn = page.locator(f'button:has-text(\"{btn_text}\")').first
+                    if await btn.count():
+                        await btn.click(force=True, timeout=3000)
+                        kuaishou_logger.info(_msg("🧾", f"作者声明已确认（force {btn_text}）"))
+                        break
         except Exception as exc:
             kuaishou_logger.warning(_msg("⚠️", f"作者声明设置失败，跳过: {exc}"))
 
