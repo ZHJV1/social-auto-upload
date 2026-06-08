@@ -457,38 +457,54 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 await checkbox.check()
                 xiaohongshu_logger.success(_msg("✅", "原创声明已勾选"))
 
-            # 3. 内容类型声明 — 选「笔记含AI合成内容」
+            # 3. 内容类型声明 — 打开下拉，选任意含 AI 的选项
             type_markers = [
-                'div:has-text("内容类型声明")',
-                'span:has-text("内容类型"), div:has-text("内容类型")',
-                'text="添加内容类型声明"',
+                ':has-text("笔记内容说明")',
+                ':has-text("内容类型声明")',
+                ':has-text("内容类型")',
+                ':has-text("添加内容类型声明")',
+                ':has-text("声明")',
             ]
             for marker in type_markers:
                 trigger = page.locator(marker).first
-                if await trigger.count():
-                    try:
+                try:
+                    if await trigger.count() and await trigger.is_visible():
                         await trigger.click(timeout=3000)
-                    except Exception:
-                        pass
-                    break
+                        await asyncio.sleep(1)
+                        break
+                except Exception:
+                    continue
 
-            # 选「笔记含AI合成内容」→ 精确匹配失败时降级为任意含 AI 选项
-            ai_option = page.locator(
-                ':has-text("笔记含AI合成内容"), '
-                ':has-text("AI合成"), '
-                ':has-text("含AI合成")'
-            ).first
-            if await ai_option.count():
-                await ai_option.click(timeout=6000)
-                xiaohongshu_logger.success(_msg("🤖", "内容类型声明已选「笔记含AI合成内容」"))
-            else:
-                # 降级：选任何含 "AI" 的可见选项
-                fallback = page.locator(':has-text("AI")').last
-                if await fallback.count() and await fallback.is_visible():
-                    await fallback.click(timeout=3000)
-                    xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选（AI降级匹配）"))
-                else:
-                    xiaohongshu_logger.info(_msg("🧾", "未发现AI相关选项，跳过"))
+            # 扫描所有可见选项，优先精确匹配 → 降级任意含 AI
+            ai_keys = ['笔记含AI合成内容', 'AI合成内容', 'AI合成', '含AI合成',
+                       '内容由AI生成', 'AI生成', '人工智能生成']
+            selected = False
+            for key in ai_keys:
+                opt = page.locator(f'li:has-text(\"{key}\"), [class*=\"item\"]:has-text(\"{key}\"), :has-text(\"{key}\")').first
+                try:
+                    if await opt.count() and await opt.is_visible():
+                        await opt.click(timeout=3000)
+                        xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选「{key}」"))
+                        selected = True
+                        break
+                except Exception:
+                    continue
+            if not selected:
+                all_items = page.locator('li, [class*=\"item\"], [class*=\"option\"]')
+                cnt = await all_items.count()
+                for i in range(cnt):
+                    item = all_items.nth(i)
+                    try:
+                        txt = await item.inner_text()
+                        if 'AI' in txt.upper() and await item.is_visible():
+                            await item.click()
+                            xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选（AI降级）: {txt.strip()[:40]}"))
+                            selected = True
+                            break
+                    except Exception:
+                        continue
+            if not selected:
+                xiaohongshu_logger.info(_msg("🧾", "未发现AI相关选项，跳过"))
         except Exception as exc:
             xiaohongshu_logger.warning(_msg("⚠️", f"原创声明设置时出错，跳过: {exc}"))
 

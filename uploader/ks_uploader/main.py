@@ -394,22 +394,40 @@ class KSBaseUploader(BaseVideoUploader):
             if not await popup.count():
                 popup = page.locator('body')  # fallback
 
-            popup_text = await popup.inner_text()
+            # 扫描下拉选项，优先精确匹配 → 降级匹配含 AI 的任意项
+            await asyncio.sleep(1.5)
+            selected = False
             ai_keys = ['内容由AI生成', '内容为AI生成', 'AI生成内容',
                        '人工智能生成', '含有AI生成内容', 'AI生成',
                        '含AI生成', 'AI技术生成']
-            # 键盘搜索精确定位「内容为AI生成」：先用更长的词避免误匹配
-            await page.keyboard.type("内容为AI")
-            await asyncio.sleep(1)
-            # 如果搜索无结果（下拉没过滤），ArrowDown 跳过第一个默认项
-            await page.keyboard.press("ArrowDown")
-            await asyncio.sleep(0.3)
-            await page.keyboard.press("Enter")
-            kuaishou_logger.success(_msg("🤖", "作者声明已选「内容为AI生成」"))
-
-            await asyncio.sleep(1)
-
-            # Element UI select 选中即保存，无需额外点确认
+            # 先尝试精确匹配
+            for key in ai_keys:
+                opt = popup.locator(f'li:has-text(\"{key}\"), [class*=\"item\"]:has-text(\"{key}\"), :has-text(\"{key}\")').first
+                try:
+                    if await opt.count() and await opt.is_visible():
+                        await opt.click()
+                        kuaishou_logger.success(_msg("🤖", f"作者声明已选「{key}」"))
+                        selected = True
+                        break
+                except Exception:
+                    continue
+            # 降级：点任意含 AI 的可见选项
+            if not selected:
+                all_items = popup.locator('li, [class*=\"item\"], [class*=\"option\"]')
+                cnt = await all_items.count()
+                for i in range(cnt):
+                    item = all_items.nth(i)
+                    try:
+                        txt = await item.inner_text()
+                        if 'AI' in txt.upper() and await item.is_visible():
+                            await item.click()
+                            kuaishou_logger.success(_msg("🤖", f"作者声明已选（AI降级）: {txt.strip()[:40]}"))
+                            selected = True
+                            break
+                    except Exception:
+                        continue
+            if not selected:
+                kuaishou_logger.warning(_msg("😵", "未找到含AI的作者声明选项"))
         except Exception as exc:
             kuaishou_logger.warning(_msg("⚠️", f"作者声明设置失败，跳过: {exc}"))
 
