@@ -434,17 +434,16 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         await self.fill_tags(page)
 
     async def check_original_declaration(self, page: Page) -> None:
-        """小红书原创声明 + 内容类型声明选「笔记含AI合成内容」"""
+        """小红书AI内容标注 -> force-click + 全页搜索选项"""
         try:
-            # 1. 滚动到页面底部，展开声明区域
             await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
             await asyncio.sleep(1)
 
-            # 2. 勾选原创声明 checkbox（可选步骤，失败不阻断）
+            # 1. 勾选原创声明
             try:
-                cb = page.locator('label:has-text("原创") input').first
+                cb = page.locator(':has-text("原创声明") input[type="checkbox"]').first
                 if not await cb.count():
-                    cb = page.locator(':has-text("原创声明") input[type="checkbox"]').first
+                    cb = page.locator('label:has-text("原创") input').first
                 if await cb.count():
                     await cb.scroll_into_view_if_needed()
                     if not await cb.is_checked():
@@ -453,25 +452,40 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             except Exception:
                 pass
 
-            # 3. 点击内容类型下拉（force click 穿透遮罩）
-            trigger = page.locator('.d-select-placeholder').first
-            if not await trigger.count():
-                trigger = page.locator(':has-text("内容类型")').last
-            if await trigger.count():
-                await trigger.scroll_into_view_if_needed()
-                await trigger.click(force=True, timeout=5000)
-                await asyncio.sleep(2)
-                xiaohongshu_logger.info(_msg("🧾", "内容类型下拉已打开"))
+            # 2. 找到内容类型的 d-select 容器并 force-click
+            select_wrapper = page.locator('.d-select-wrapper').filter(has_text='内容类型').first
+            if not await select_wrapper.count():
+                select_wrapper = page.locator(':has-text("内容类型")').last
+            await select_wrapper.scroll_into_view_if_needed()
+            await select_wrapper.click(force=True, timeout=5000)
+            await asyncio.sleep(2)
+            xiaohongshu_logger.info(_msg("🧾", "内容类型下拉已打开"))
 
-                # 4. 选含 AI 的选项
-                for ai_kw in ['笔记含AI合成内容', 'AI合成', '含AI']:
-                    opt = page.locator(f'[class*="option"]:has-text("{ai_kw}"), li:has-text("{ai_kw}")').first
-                    if await opt.count() and await opt.is_visible():
-                        await opt.click()
-                        xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选: {ai_kw}"))
-                        break
-                else:
-                    xiaohongshu_logger.info(_msg("🧾", "未发现AI选项"))
+            # 3. 优先点 .d-option-name 节点（含选项文本的具体元素）
+            for ai_kw in ['笔记含AI合成内容', 'AI合成', '含AI']:
+                opt = page.locator(f'.d-option-name:has-text("{ai_kw}")').first
+                if not await opt.count():
+                    opt = page.locator(f'.d-option-content:has-text("{ai_kw}")').first
+                if not await opt.count():
+                    opt = page.locator(f':has-text("{ai_kw}")').last
+                if await opt.count() and await opt.is_visible():
+                    await opt.click()
+                    xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选: {ai_kw}"))
+                    break
+            else:
+                # 降级：点击 d-popover 中最后一个可见选项
+                popover = page.locator('.d-popover:visible').last
+                if await popover.count():
+                    opts = popover.locator('.d-option-name, .d-option-content, .d-grid-item')
+                    cnt = await opts.count()
+                    if cnt > 0:
+                        # 第 2 个选项是 AI
+                        idx = 1 if cnt >= 2 else 0
+                        await opts.nth(idx).click()
+                        txt = (await opts.nth(idx).inner_text())[:40]
+                        xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选(降级#{idx}): {txt}"))
+                    else:
+                        xiaohongshu_logger.info(_msg("🧾", "未发现AI选项"))
         except Exception as exc:
             xiaohongshu_logger.warning(_msg("⚠️", f"原创声明设置时出错，跳过: {exc}"))
 
