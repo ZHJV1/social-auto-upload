@@ -398,16 +398,14 @@ class KSBaseUploader(BaseVideoUploader):
             ai_keys = ['内容由AI生成', '内容为AI生成', 'AI生成内容',
                        '人工智能生成', '含有AI生成内容', 'AI生成',
                        '含AI生成', 'AI技术生成']
-            # 用键盘选下拉选项：Arrow Down → Enter（Element UI 标准交互）
+            # 键盘搜索精确定位「内容为AI生成」：先用更长的词避免误匹配
+            await page.keyboard.type("内容为AI")
+            await asyncio.sleep(1)
+            # 如果搜索无结果（下拉没过滤），ArrowDown 跳过第一个默认项
             await page.keyboard.press("ArrowDown")
             await asyncio.sleep(0.3)
-            await page.keyboard.press("ArrowDown")  # 跳过默认聚焦
-            await asyncio.sleep(0.3)
-            # 输入搜索 "AI" 快速定位
-            await page.keyboard.type("AI")
-            await asyncio.sleep(1)
             await page.keyboard.press("Enter")
-            kuaishou_logger.success(_msg("🤖", "作者声明已选"))
+            kuaishou_logger.success(_msg("🤖", "作者声明已选「内容为AI生成」"))
 
             await asyncio.sleep(1)
 

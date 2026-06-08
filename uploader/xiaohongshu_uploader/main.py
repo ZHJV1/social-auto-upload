@@ -472,7 +472,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                         pass
                     break
 
-            # 选「笔记含AI合成内容」
+            # 选「笔记含AI合成内容」→ 精确匹配失败时降级为任意含 AI 选项
             ai_option = page.locator(
                 ':has-text("笔记含AI合成内容"), '
                 ':has-text("AI合成"), '
@@ -482,7 +482,13 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 await ai_option.click(timeout=6000)
                 xiaohongshu_logger.success(_msg("🤖", "内容类型声明已选「笔记含AI合成内容」"))
             else:
-                xiaohongshu_logger.info(_msg("🧾", "未发现「笔记含AI合成内容」选项，跳过"))
+                # 降级：选任何含 "AI" 的可见选项
+                fallback = page.locator(':has-text("AI")').last
+                if await fallback.count() and await fallback.is_visible():
+                    await fallback.click(timeout=3000)
+                    xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选（AI降级匹配）"))
+                else:
+                    xiaohongshu_logger.info(_msg("🧾", "未发现AI相关选项，跳过"))
         except Exception as exc:
             xiaohongshu_logger.warning(_msg("⚠️", f"原创声明设置时出错，跳过: {exc}"))
 
