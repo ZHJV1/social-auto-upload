@@ -434,25 +434,57 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         await self.fill_tags(page)
 
     async def check_original_declaration(self, page: Page) -> None:
-        """勾选原创声明（如果页面上有的话）"""
+        """打开原创声明 & 内容类型声明选「笔记含AI合成内容」"""
         try:
-            # 小红书的原创声明通常是 checkbox 或 switch 组件
-            original_checkbox = page.locator('div.original-declaration checkbox, div.original-declaration input[type="checkbox"], label:has-text("原创") input[type="checkbox"]').first
-            if await original_checkbox.count() and not await original_checkbox.is_checked():
-                await original_checkbox.check()
-                xiaohongshu_logger.success(_msg("✅", "原创声明已勾选"))
-                return
+            # 1. 找「原创声明」区域并触发（展开可能折叠的内容类型选项）
+            original_entry = page.locator(
+                'div:has-text("原创声明"), span:has-text("原创声明"), '
+                'div.original-declaration'
+            ).first
+            if await original_entry.count():
+                try:
+                    await original_entry.click(timeout=3000)
+                except Exception:
+                    pass
 
-            # 尝试通过文本匹配找到原创声明区域并点击
-            original_text = page.locator('div:has-text("原创声明"), span:has-text("原创声明"), div:has-text("原创"), label:has-text("原创")').first
-            if await original_text.count():
-                await original_text.click()
+            # 2. 勾选原创声明 checkbox/switch
+            checkbox = page.locator(
+                'div.original-declaration input[type="checkbox"], '
+                'label:has-text("原创") input[type="checkbox"], '
+                'input[type="checkbox"][value*="原创"]'
+            ).first
+            if await checkbox.count() and not await checkbox.is_checked():
+                await checkbox.check()
                 xiaohongshu_logger.success(_msg("✅", "原创声明已勾选"))
-                return
 
-            xiaohongshu_logger.info(_msg("🧾", "未发现原创声明选项，跳过"))
+            # 3. 内容类型声明 — 选「笔记含AI合成内容」
+            type_markers = [
+                'div:has-text("内容类型声明")',
+                'span:has-text("内容类型"), div:has-text("内容类型")',
+                'text="添加内容类型声明"',
+            ]
+            for marker in type_markers:
+                trigger = page.locator(marker).first
+                if await trigger.count():
+                    try:
+                        await trigger.click(timeout=3000)
+                    except Exception:
+                        pass
+                    break
+
+            # 选「笔记含AI合成内容」
+            ai_option = page.locator(
+                ':has-text("笔记含AI合成内容"), '
+                ':has-text("AI合成"), '
+                ':has-text("含AI合成")'
+            ).first
+            if await ai_option.count():
+                await ai_option.click(timeout=6000)
+                xiaohongshu_logger.success(_msg("🤖", "内容类型声明已选「笔记含AI合成内容」"))
+            else:
+                xiaohongshu_logger.info(_msg("🧾", "未发现「笔记含AI合成内容」选项，跳过"))
         except Exception as exc:
-            xiaohongshu_logger.warning(_msg("⚠️", f"勾选原创声明时出错，跳过: {exc}"))
+            xiaohongshu_logger.warning(_msg("⚠️", f"原创声明设置时出错，跳过: {exc}"))
 
 
 class XiaoHongShuVideo(XiaoHongShuBaseUploader):
