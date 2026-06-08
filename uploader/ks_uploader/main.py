@@ -351,44 +351,20 @@ class KSBaseUploader(BaseVideoUploader):
         kuaishou_logger.info(f"✅ 定时发布时间已设置为 {publish_date_str}")
 
     async def set_author_declaration(self, page: Page) -> None:
-        """快手作者声明 -> force-click Ant Design select -> 选含AI选项"""
+        """快手作者声明 -> focus input + ArrowDown + Enter"""
         try:
-            # 1. 展开作者声明区域
-            entry = page.locator('div:has-text("作者声明"), span:has-text("作者声明")').first
-            if await entry.count() and await entry.is_visible():
-                await entry.scroll_into_view_if_needed()
-                await entry.click()
-                kuaishou_logger.info(_msg("🧾", "已展开作者声明区域"))
-            else:
-                kuaishou_logger.info(_msg("🧾", "未发现作者声明入口，跳过"))
-                return
+            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await page.wait_for_timeout(300)
+            # Focus the 作者声明 input (index 2 of .ant-select)
+            inp = page.locator('.ant-select').nth(2).locator('input')
+            await inp.focus()
+            await page.wait_for_timeout(500)
+            # ArrowDown 打开下拉并选中第一项「内容为AI生成」
+            await page.keyboard.press('ArrowDown')
             await asyncio.sleep(1)
-
-            # 2. Force-click Ant Design select（disabled input 遮罩，必须 force）
-            select = page.locator('.ant-select').last
-            await select.scroll_into_view_if_needed()
-            await select.click(force=True, timeout=5000)
-            await asyncio.sleep(2)
-            kuaishou_logger.info(_msg("🧾", "已打开声明类型下拉"))
-            
-            # 3. 等 Ant Design dropdown 出现，点第一个含 AI 的 option
-            dd = page.locator('.ant-select-dropdown:not([style*="display: none"])').last
-            await dd.wait_for(state='visible', timeout=5000)
-            # 选含 AI 的项（Ant Design: .ant-select-item-option）
-            for ai_kw in ['内容由AI生成','内容为AI生成','AI生成','含AI']:
-                opt = dd.locator(f'[class*="item"]:has-text("{ai_kw}")').first
-                if await opt.count():
-                    await opt.click()
-                    kuaishou_logger.success(_msg("🤖", f"作者声明已选: {ai_kw}"))
-                    return
-            # 降级：点任意项
-            first = dd.locator('[class*="item"]').first
-            if await first.count():
-                txt = (await first.inner_text())[:40]
-                await first.click()
-                kuaishou_logger.success(_msg("🤖", f"作者声明已选(降级): {txt}"))
-            else:
-                kuaishou_logger.warning(_msg("😵", "下拉无选项"))
+            # Enter 确认
+            await page.keyboard.press('Enter')
+            kuaishou_logger.success(_msg("🤖", "作者声明已选「内容为AI生成」"))
         except Exception as exc:
             kuaishou_logger.warning(_msg("⚠️", f"作者声明设置失败，跳过: {exc}"))
 
