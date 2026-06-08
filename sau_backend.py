@@ -692,8 +692,13 @@ async def _tencent_cookie_adapter(account_name: str, status_queue: Queue):
     from conf import BASE_DIR
     account_file = str(Path(BASE_DIR) / "cookies" / f"tencent_{account_name}.json")
     Path(account_file).parent.mkdir(parents=True, exist_ok=True)
+
+    def _qrcode_callback(qrcode_info: dict):
+        if qrcode_info.get("image_data_url"):
+            status_queue.put(json.dumps({"image": qrcode_info["image_data_url"]}))
+
     status_queue.put(json.dumps({"status": "connecting"}))
-    result = await _tencent_gen(account_file, headless=True)
+    result = await _tencent_gen(account_file, qrcode_callback=_qrcode_callback, headless=True)
     status_queue.put(json.dumps(result))
 
 
