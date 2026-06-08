@@ -698,7 +698,10 @@ async def _tencent_cookie_adapter(account_name: str, status_queue: Queue):
             status_queue.put(json.dumps({"image": qrcode_info["image_data_url"]}))
 
     status_queue.put(json.dumps({"status": "connecting"}))
-    result = await _tencent_gen(account_file, qrcode_callback=_qrcode_callback, headless=True)
+    try:
+        result = await _tencent_gen(account_file, qrcode_callback=_qrcode_callback, headless=True)
+    except Exception as exc:
+        result = {"success": False, "status": "failed", "message": str(exc)}
     status_queue.put(json.dumps(result))
 
 
