@@ -350,6 +350,40 @@ class KSBaseUploader(BaseVideoUploader):
         await asyncio.sleep(2)
         kuaishou_logger.info(f"✅ 定时发布时间已设置为 {publish_date_str}")
 
+    async def set_author_declaration(self, page: Page) -> None:
+        """快手「作者声明」→ 选择「内容为AI生成」"""
+        try:
+            # 「作者声明」入口
+            entry = page.locator(
+                'div:has-text("作者声明"), span:has-text("作者声明")'
+            ).first
+            if await entry.count() and await entry.is_visible():
+                await entry.click()
+                kuaishou_logger.info(_msg("🧾", "已打开作者声明面板"))
+            else:
+                kuaishou_logger.info(_msg("🧾", "未发现作者声明入口，跳过"))
+                return
+
+            await asyncio.sleep(1)
+
+            # 选「内容为AI生成」
+            ai_option = page.locator(
+                ':has-text("内容为AI生成"), :has-text("AI生成")'
+            ).first
+            if await ai_option.count():
+                await ai_option.click()
+                kuaishou_logger.success(_msg("🤖", "作者声明已选「内容为AI生成」"))
+
+            # 确认
+            confirm = page.locator(
+                'button:has-text("确定"), button:has-text("确认")'
+            ).first
+            if await confirm.count():
+                await confirm.click()
+                kuaishou_logger.info(_msg("🧾", "作者声明已确认"))
+        except Exception as exc:
+            kuaishou_logger.warning(_msg("⚠️", f"作者声明设置失败，跳过: {exc}"))
+
     async def close_guide_overlay(self, page: Page) -> bool:
         joyride_tooltip = page.locator('div[id^="react-joyride-step"] div[role="alertdialog"]')
 
@@ -527,6 +561,8 @@ class KSVideo(KSBaseUploader):
             if self.publish_strategy == KUAISHOU_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
                 await self.set_schedule_time(page, self.publish_date)
 
+            await self.set_author_declaration(page)
+
             while True:
                 try:
                     publish_button = page.get_by_text("发布", exact=True)
@@ -665,6 +701,8 @@ class KSNote(KSBaseUploader):
 
         if self.publish_strategy == KUAISHOU_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
             await self.set_schedule_time(page, self.publish_date)
+
+        await self.set_author_declaration(page)
 
         while True:
             try:
