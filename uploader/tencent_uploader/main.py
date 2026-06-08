@@ -198,6 +198,7 @@ async def _save_tencent_qrcode(page: Page, account_file: str, previous_qrcode_pa
 
 
 async def _is_tencent_login_completed(page: Page) -> bool:
+    # 检测「发表视频」按钮
     publish_markers = [
         page.locator('div:has-text("发表视频")').first,
         page.locator('button:has-text("发表")').first,
@@ -210,22 +211,27 @@ async def _is_tencent_login_completed(page: Page) -> bool:
         except Exception:
             continue
 
-    if not (page.url.startswith(TENCENT_PLATFORM_URL) or page.url.startswith(TENCENT_UPLOAD_URL) or page.url.startswith(TENCENT_MANAGE_URL)):
+    # URL 变化检测（登录成功会跳转到 /platform）
+    if page.url.startswith(TENCENT_PLATFORM_URL) or page.url.startswith(TENCENT_UPLOAD_URL) or page.url.startswith(TENCENT_MANAGE_URL):
+        # 不在登录页了，但需要确认没有二维码
+        pass
+    elif "login" not in page.url and "qrcode" not in page.url:
         return False
 
-    login_markers = [
-        page.locator("div.login-qrcode-wrap").first,
-        page.locator("div.qrcode-wrap").first,
-        page.locator("img.qrcode").first,
-        page.locator('span:has-text("微信扫码登录 视频号助手")').first,
+    # 关键检测：二维码图片是否消失（headless 下最可靠）
+    qr_selectors = [
+        "div.login-qrcode-wrap", "div.qrcode-wrap", "img.qrcode",
+        'span:has-text("微信扫码登录")',
     ]
-    for marker in login_markers:
+    for sel in qr_selectors:
+        marker = page.locator(sel).first
         try:
             if await marker.count() and await marker.is_visible():
-                return False
+                return False  # 仍有二维码，未登录
         except Exception:
             continue
 
+    # 二维码全部消失 = 登录成功
     return True
 
 
