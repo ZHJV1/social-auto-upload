@@ -411,23 +411,7 @@ class KSBaseUploader(BaseVideoUploader):
 
             await asyncio.sleep(1)
 
-            # 确认（等按钮变为 enabled）
-            await asyncio.sleep(1)
-            confirm = page.locator(
-                'button:has-text("确定"):not([disabled]), button:has-text("确认"):not([disabled])'
-            ).first
-            try:
-                await confirm.wait_for(state="visible", timeout=8000)
-                await confirm.click()
-                kuaishou_logger.info(_msg("🧾", "作者声明已确认"))
-            except Exception:
-                # 回退：所有确认按钮 force click
-                for btn_text in ["确定", "确认", "保存"]:
-                    btn = page.locator(f'button:has-text(\"{btn_text}\")').first
-                    if await btn.count():
-                        await btn.click(force=True, timeout=3000)
-                        kuaishou_logger.info(_msg("🧾", f"作者声明已确认（force {btn_text}）"))
-                        break
+            # Element UI select 选中即保存，无需额外点确认
         except Exception as exc:
             kuaishou_logger.warning(_msg("⚠️", f"作者声明设置失败，跳过: {exc}"))
 
