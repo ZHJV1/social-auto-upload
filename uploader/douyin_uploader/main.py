@@ -367,7 +367,7 @@ class DouYinBaseUploader(BaseVideoUploader):
             douyin_logger.error(_msg("😢", f"设置商品链接时出错: {str(e)}"))
             return False
 
-    async def set_self_declaration(self, page: Page, declaration: str = "内容为个人观点或见解") -> None:
+    async def set_self_declaration(self, page: Page, declaration: str = "内容由AI生成") -> None:
         """抖音「自主声明」为发布必选项：打开声明弹窗 → 选指定类型 → 确定。
 
         入口和弹窗都是异步渲染，等不到就记 warning 跳过、继续发布，绝不因此中断
