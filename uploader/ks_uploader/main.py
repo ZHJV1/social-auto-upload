@@ -351,83 +351,44 @@ class KSBaseUploader(BaseVideoUploader):
         kuaishou_logger.info(f"✅ 定时发布时间已设置为 {publish_date_str}")
 
     async def set_author_declaration(self, page: Page) -> None:
-        """快手「作者声明」→ 选择「内容为AI生成」"""
+        """快手作者声明 -> force-click Ant Design select -> 选含AI选项"""
         try:
-            # 1. 展开「作者声明」区域
-            entry = page.locator(
-                'div:has-text("作者声明"), span:has-text("作者声明")'
-            ).first
+            # 1. 展开作者声明区域
+            entry = page.locator('div:has-text("作者声明"), span:has-text("作者声明")').first
             if await entry.count() and await entry.is_visible():
+                await entry.scroll_into_view_if_needed()
                 await entry.click()
                 kuaishou_logger.info(_msg("🧾", "已展开作者声明区域"))
             else:
                 kuaishou_logger.info(_msg("🧾", "未发现作者声明入口，跳过"))
                 return
-
             await asyncio.sleep(1)
 
-            # 2. 打开声明类型下拉菜单 —— 点在 select 组件本身而非文本标签
-            await asyncio.sleep(0.5)
-            # 作者声明区域内的 input/select 组件
-            select_trigger = page.locator(
-                '.el-select, .ant-select, input[readonly], '
-                'div[class*=\"select\"], div[class*=\"dropdown\"]'
-            ).filter(has_text="补充").first
-            if await select_trigger.count():
-                await select_trigger.click()
-                kuaishou_logger.info(_msg("🧾", "已打开声明类型下拉"))
+            # 2. Force-click Ant Design select（disabled input 遮罩，必须 force）
+            select = page.locator('.ant-select').last
+            await select.scroll_into_view_if_needed()
+            await select.click(force=True, timeout=5000)
+            await asyncio.sleep(2)
+            kuaishou_logger.info(_msg("🧾", "已打开声明类型下拉"))
+            
+            # 3. 等 Ant Design dropdown 出现，点第一个含 AI 的 option
+            dd = page.locator('.ant-select-dropdown:not([style*="display: none"])').last
+            await dd.wait_for(state='visible', timeout=5000)
+            # 选含 AI 的项（Ant Design: .ant-select-item-option）
+            for ai_kw in ['内容由AI生成','内容为AI生成','AI生成','含AI']:
+                opt = dd.locator(f'[class*="item"]:has-text("{ai_kw}")').first
+                if await opt.count():
+                    await opt.click()
+                    kuaishou_logger.success(_msg("🤖", f"作者声明已选: {ai_kw}"))
+                    return
+            # 降级：点任意项
+            first = dd.locator('[class*="item"]').first
+            if await first.count():
+                txt = (await first.inner_text())[:40]
+                await first.click()
+                kuaishou_logger.success(_msg("🤖", f"作者声明已选(降级): {txt}"))
             else:
-                # 回退：直接点文本标签
-                fallback = page.locator(':has-text("为作品添加补充说明"), :has-text("请选择声明类型")').first
-                if await fallback.count():
-                    await fallback.click()
-                    kuaishou_logger.info(_msg("🧾", "已打开声明类型下拉（fallback）"))
-
-            await asyncio.sleep(1)
-
-            # 3. 在下拉 popup 中选 AI 选项（Element UI / Ant Design 的选项在 body 末尾的独立层）
-            popup = page.locator(
-                '.el-select-dropdown:visible, .el-popper:visible, '
-                '.ant-select-dropdown:visible, [class*=\"dropdown\"]:visible, '
-                '[class*=\"select-dropdown\"]:visible'
-            ).last
-            if not await popup.count():
-                popup = page.locator('body')  # fallback
-
-            # 扫描下拉选项，优先精确匹配 → 降级匹配含 AI 的任意项
-            await asyncio.sleep(1.5)
-            selected = False
-            ai_keys = ['内容由AI生成', '内容为AI生成', 'AI生成内容',
-                       '人工智能生成', '含有AI生成内容', 'AI生成',
-                       '含AI生成', 'AI技术生成']
-            # 先尝试精确匹配
-            for key in ai_keys:
-                opt = popup.locator(f'li:has-text(\"{key}\"), [class*=\"item\"]:has-text(\"{key}\"), :has-text(\"{key}\")').first
-                try:
-                    if await opt.count() and await opt.is_visible():
-                        await opt.click()
-                        kuaishou_logger.success(_msg("🤖", f"作者声明已选「{key}」"))
-                        selected = True
-                        break
-                except Exception:
-                    continue
-            # 降级：点任意含 AI 的可见选项
-            if not selected:
-                all_items = popup.locator('li, [class*=\"item\"], [class*=\"option\"]')
-                cnt = await all_items.count()
-                for i in range(cnt):
-                    item = all_items.nth(i)
-                    try:
-                        txt = await item.inner_text()
-                        if 'AI' in txt.upper() and await item.is_visible():
-                            await item.click()
-                            kuaishou_logger.success(_msg("🤖", f"作者声明已选（AI降级）: {txt.strip()[:40]}"))
-                            selected = True
-                            break
-                    except Exception:
-                        continue
-            if not selected:
-                kuaishou_logger.warning(_msg("😵", "未找到含AI的作者声明选项"))
+                kuaishou_logger.warning(_msg("😵", "下拉无选项"))
         except Exception as exc:
             kuaishou_logger.warning(_msg("⚠️", f"作者声明设置失败，跳过: {exc}"))
 

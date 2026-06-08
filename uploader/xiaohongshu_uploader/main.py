@@ -436,75 +436,46 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
     async def check_original_declaration(self, page: Page) -> None:
         """打开原创声明 & 内容类型声明选「笔记含AI合成内容」"""
         try:
-            # 1. 找「原创声明」区域并触发（展开可能折叠的内容类型选项）
-            original_entry = page.locator(
-                'div:has-text("原创声明"), span:has-text("原创声明"), '
-                'div.original-declaration'
+            # 1. 展开创作声明区域
+            declaration_section = page.locator(
+                ':has-text("创作声明"), :has-text("内容声明"), '
+                ':has-text("原创声明"), :has-text("笔记内容说明")'
             ).first
-            if await original_entry.count():
+            if await declaration_section.count():
                 try:
-                    await original_entry.click(timeout=3000)
+                    await declaration_section.scroll_into_view_if_needed()
+                    await declaration_section.click(timeout=3000)
                 except Exception:
                     pass
 
-            # 2. 勾选原创声明 checkbox/switch
-            checkbox = page.locator(
-                'div.original-declaration input[type="checkbox"], '
-                'label:has-text("原创") input[type="checkbox"], '
-                'input[type="checkbox"][value*="原创"]'
-            ).first
+            # 2. 勾选原创
+            checkbox = page.locator('input[type="checkbox"]').filter(has_text="原创").first
+            if not await checkbox.count():
+                checkbox = page.locator('label:has-text("原创") input, :has-text("原创") input').first
             if await checkbox.count() and not await checkbox.is_checked():
-                await checkbox.check()
+                await checkbox.check(force=True)
                 xiaohongshu_logger.success(_msg("✅", "原创声明已勾选"))
 
-            # 3. 内容类型声明 — 打开下拉，选任意含 AI 的选项
-            type_markers = [
-                ':has-text("笔记内容说明")',
-                ':has-text("内容类型声明")',
-                ':has-text("内容类型")',
-                ':has-text("添加内容类型声明")',
-                ':has-text("声明")',
-            ]
-            for marker in type_markers:
-                trigger = page.locator(marker).first
-                try:
-                    if await trigger.count() and await trigger.is_visible():
-                        await trigger.click(timeout=3000)
-                        await asyncio.sleep(1)
-                        break
-                except Exception:
-                    continue
-
-            # 扫描所有可见选项，优先精确匹配 → 降级任意含 AI
-            ai_keys = ['笔记含AI合成内容', 'AI合成内容', 'AI合成', '含AI合成',
-                       '内容由AI生成', 'AI生成', '人工智能生成']
-            selected = False
-            for key in ai_keys:
-                opt = page.locator(f'li:has-text(\"{key}\"), [class*=\"item\"]:has-text(\"{key}\"), :has-text(\"{key}\")').first
-                try:
+            # 3. 点内容类型下拉（force click 穿透遮罩）
+            triggers = page.locator(
+                ':has-text("内容类型"), :has-text("笔记内容说明"), '
+                ':has-text("添加内容类型声明"), :has-text("声明")'
+            ).last
+            if await triggers.count():
+                await triggers.scroll_into_view_if_needed()
+                await triggers.click(force=True, timeout=5000)
+                await asyncio.sleep(2)
+                xiaohongshu_logger.info(_msg("🧾", "已打开内容类型下拉"))
+                
+                # 4. 在下拉中选含 AI 的选项
+                for ai_kw in ['笔记含AI合成内容','AI合成内容','含AI','AI生成']:
+                    opt = page.locator(f'[class*="item"]:has-text("{ai_kw}"), [class*="option"]:has-text("{ai_kw}"), li:has-text("{ai_kw}")').first
                     if await opt.count() and await opt.is_visible():
-                        await opt.click(timeout=3000)
-                        xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选「{key}」"))
-                        selected = True
+                        await opt.click()
+                        xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选: {ai_kw}"))
                         break
-                except Exception:
-                    continue
-            if not selected:
-                all_items = page.locator('li, [class*=\"item\"], [class*=\"option\"]')
-                cnt = await all_items.count()
-                for i in range(cnt):
-                    item = all_items.nth(i)
-                    try:
-                        txt = await item.inner_text()
-                        if 'AI' in txt.upper() and await item.is_visible():
-                            await item.click()
-                            xiaohongshu_logger.success(_msg("🤖", f"内容类型声明已选（AI降级）: {txt.strip()[:40]}"))
-                            selected = True
-                            break
-                    except Exception:
-                        continue
-            if not selected:
-                xiaohongshu_logger.info(_msg("🧾", "未发现AI相关选项，跳过"))
+                else:
+                    xiaohongshu_logger.info(_msg("🧾", "未发现AI选项，跳过"))
         except Exception as exc:
             xiaohongshu_logger.warning(_msg("⚠️", f"原创声明设置时出错，跳过: {exc}"))
 
