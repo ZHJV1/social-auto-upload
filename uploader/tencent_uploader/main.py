@@ -17,6 +17,7 @@ from utils.base_social_media import set_init_script
 from utils.log import tencent_logger
 
 TENCENT_LOGIN_URL = "https://channels.weixin.qq.com"
+TENCENT_PLATFORM_URL = "https://channels.weixin.qq.com/platform"
 TENCENT_UPLOAD_URL = "https://channels.weixin.qq.com/platform/post/create"
 TENCENT_MANAGE_URL = "https://channels.weixin.qq.com/platform/post/list"
 TENCENT_PUBLISH_STRATEGY_IMMEDIATE = "immediate"
@@ -111,8 +112,8 @@ async def cookie_auth(account_file):
             context = await browser.new_context(storage_state=account_file)
             context = await set_init_script(context)
             page = await context.new_page()
-            await page.goto(TENCENT_UPLOAD_URL)
-            await page.wait_for_url(TENCENT_UPLOAD_URL, timeout=5000)
+            await page.goto(TENCENT_PLATFORM_URL, wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_load_state("load")
 
             login_markers = [
                 page.get_by_text("扫码登录", exact=True).first,
@@ -209,7 +210,7 @@ async def _is_tencent_login_completed(page: Page) -> bool:
         except Exception:
             continue
 
-    if not (page.url.startswith(TENCENT_UPLOAD_URL) or page.url.startswith(TENCENT_MANAGE_URL)):
+    if not (page.url.startswith(TENCENT_PLATFORM_URL) or page.url.startswith(TENCENT_UPLOAD_URL) or page.url.startswith(TENCENT_MANAGE_URL)):
         return False
 
     login_markers = [
@@ -495,11 +496,41 @@ class TencentBaseUploader(BaseVideoUploader):
         await page.locator("div.input-editor").click()
 
     async def open_upload_page(self, page: Page) -> None:
-        await page.goto(TENCENT_UPLOAD_URL)
-        await page.wait_for_url(TENCENT_UPLOAD_URL)
+        # 微信视频号已废弃直接跳转 /post/create，现在统一先进平台首页再点「发表视频」
+        await page.goto(TENCENT_PLATFORM_URL, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_load_state("load")
+        # 点「发表视频」按钮打开上传弹窗
+        publish_btn = page.get_by_text("发表视频", exact=True).first
+        if not await publish_btn.count():
+            publish_btn = page.locator('button:has-text("发表视频")').first
+        await publish_btn.wait_for(state="visible", timeout=30000)
+        await publish_btn.click()
+        # 等上传弹窗/页面出现
+        await page.wait_for_timeout(2000)
 
     async def upload_video_file(self, page: Page, file_path: str) -> None:
-        file_input = page.locator('input[type="file"]')
+        # 视频号上传页面的 input[type="file"] 可能不在初始 DOM 中。
+        # 先截图诊断页面状态，再尝试多种定位策略。
+        file_input = page.locator('input[type="file"]').first
+        try:
+            await file_input.wait_for(state="attached", timeout=15000)
+        except Exception:
+            debug_path = str(Path(BASE_DIR) / "debug_tencent_upload_page.png")
+            await page.screenshot(path=debug_path, full_page=True)
+            page_text = (await page.locator("body").first.inner_text())[:2000]
+            tencent_logger.error(_msg("🔍", f"诊断截图: {debug_path}"))
+            tencent_logger.error(_msg("📄", f"页面文本: {page_text}"))
+            # 尝试用 XPath 找所有 input
+            all_inputs = await page.locator("input").count()
+            tencent_logger.info(_msg("🔢", f"页面共有 {all_inputs} 个 input 元素"))
+            raise
+
+        await file_input.evaluate("""(el) => {
+            el.style.setProperty('display', 'block', 'important');
+            el.style.setProperty('visibility', 'visible', 'important');
+            el.style.setProperty('opacity', '1', 'important');
+            el.style.setProperty('position', 'static', 'important');
+        }""")
         await file_input.set_input_files(file_path)
 
     async def set_short_title(self, page: Page, title: str, short_title: str | None = None) -> None:
