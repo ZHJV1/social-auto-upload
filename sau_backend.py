@@ -687,12 +687,14 @@ def download_cookie():
 
 
 async def _tencent_cookie_adapter(account_name: str, status_queue: Queue):
+    import json
     from pathlib import Path
     from conf import BASE_DIR
     account_file = str(Path(BASE_DIR) / "cookies" / f"tencent_{account_name}.json")
     Path(account_file).parent.mkdir(parents=True, exist_ok=True)
+    status_queue.put(json.dumps({"status": "connecting"}))
     result = await _tencent_gen(account_file, headless=True)
-    status_queue.put(str(result))
+    status_queue.put(json.dumps(result))
 
 
 # 包装函数：在线程中运行异步函数
